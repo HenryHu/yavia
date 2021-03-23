@@ -1,7 +1,6 @@
 """xxx"""
 import logging
 import argparse
-import sys
 
 import hid
 
@@ -59,7 +58,6 @@ def list_devices():
             dev['vendor_id'], dev['product_id'],
             dev['interface_number'],
             dev['path'].decode('utf-8')))
-    sys.exit(0)
 
 
 def main():
@@ -79,6 +77,7 @@ def main():
 
     if args.list or not args.path:
         list_devices()
+        return
 
     dev = hid.device()
     dev.open_path(args.path.encode('utf-8'))
