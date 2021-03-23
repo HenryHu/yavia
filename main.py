@@ -1,76 +1,22 @@
 """xxx"""
 import time
 import logging
+import argparse
+
+import cmd
 import hid
+import keys
 
 
 logger = logging.getLogger('main')
 
-CMD_VER = 0x01
-CMD_GET_VALUE = 0x02
-CMD_GET_KEYCODE = 0x04
-CMD_GET_LAYER_COUNT = 0x11
+logging.basicConfig(level=logging.INFO)
 
 
-VALUE_UPTIME = 0x01
-VALUE_LAYOUT_OPTIONS = 0x02
-VALUE_SWITCH_MATRIX = 0x03
-
-logging.basicConfig(level=logging.WARN)
-
-
-def populate_keys(template):
-    for i in range(26):
-        template[i + 4] = chr(ord('A') + i)
-    for i in range(10):
-        template[i + 30] = chr(ord('1') + i)
-    return template
-
-
-KEYCODE_TO_NAME = populate_keys({
-    1:   '______',
-    41:  'ESC',
-
-    73:  'INS',
-    74:  'HOME',
-    75:  'PGUP',
-    76:  'DEL',
-    77:  'END',
-    78:  'PGDN',
-    79:  'RIGHT',
-    80:  'LEFT',
-    81:  'DOWN',
-    82:  'UP',
-
-    0xA8: 'MUTE',
-    0xAB: 'MNEXT',
-    0xAC: 'MPREV',
-    0xAE: 'PLAY',
-
-    0xF0: 'MS_UP',
-    0xF1: 'MS_DOWN',
-    0xF2: 'MS_LEFT',
-    0xF3: 'MS_RIGHT',
-    0xF4: 'MS_BTN1',
-    0xF5: 'MS_BTN2',
-    0xF6: 'MS_BTN3',
-    0xF7: 'MS_BTN4',
-    0xF8: 'MS_BTN5',
-
-    0x5C00: 'RESET',
-    0x5CC2: 'RGB_TOG',
-    0x5CC3: 'RGB_MOD',
-})
-
-
-def gen_name_to_keycode():
-    ret = {}
-    for keycode, name in KEYCODE_TO_NAME.items():
-        ret[name] = keycode
-    return ret
-
-
-NAME_TO_KEYCODE = gen_name_to_keycode()
+parser = argparse.ArgumentParser(description="A CLI tool to interact with VIA")
+parser.add_argument('key_descriptions', metavar='K', type=str, nargs='*',
+                    help='a key description')
+args = parser.parse_args()
 
 
 dev = hid.device()
@@ -80,21 +26,22 @@ print("Keyboard: %s %s" % (dev.get_manufacturer_string(),
 dev.set_nonblocking(True)
 
 
-def send_req(cmd, args=[]):
+def send_req(command, cmd_args=None):
     req = [0] * 33
-    req[1] = cmd
+    req[1] = command
     idx = 2
-    for arg in args:
-        req[idx] = arg
-        idx += 1
+    if cmd_args:
+        for arg in cmd_args:
+            req[idx] = arg
+            idx += 1
 
-    logger.info('send command: %r', req[1:])
+    logger.debug('send command: %r', req[1:])
     dev.write(req)
     resp = dev.read(32)
     while not resp:
         time.sleep(0.001)
         resp = dev.read(32)
-    logger.info('got response: %r', resp)
+    logger.debug('got response: %r', resp)
     return resp
 
 
@@ -106,33 +53,42 @@ def get_be16(buf):
     return (buf[0] << 8) + buf[1]
 
 
+def to_be16(value):
+    return [(value & 0xFF00) >> 8, value & 0xFF]
+
+
 def get_ver():
-    response = send_req(CMD_VER, [])
+    response = send_req(cmd.GET_VER)
     return get_be16(response[1:3])
 
 
 def get_uptime():
-    response = send_req(CMD_GET_VALUE, [VALUE_UPTIME])
+    response = send_req(cmd.GET_VALUE, [cmd.VALUE_UPTIME])
     return get_be32(response[2:6])
 
 
 def get_layout_options():
-    response = send_req(CMD_GET_VALUE, [VALUE_LAYOUT_OPTIONS])
+    response = send_req(cmd.GET_VALUE, [cmd.VALUE_LAYOUT_OPTIONS])
     return get_be32(response[2:6])
 
 
 def get_switch_matrix():
-    response = send_req(CMD_GET_VALUE, [VALUE_SWITCH_MATRIX])
+    response = send_req(cmd.GET_VALUE, [cmd.VALUE_SWITCH_MATRIX])
     return get_be32(response[2:6])
 
 
 def req_keycode(layer, row, col):
-    response = send_req(CMD_GET_KEYCODE, [layer, row, col])
+    response = send_req(cmd.GET_KEYCODE, [layer, row, col])
+    return get_be16(response[4:6])
+
+
+def set_keycode(layer, row, col, keycode):
+    response = send_req(cmd.SET_KEYCODE, [layer, row, col] + to_be16(keycode))
     return get_be16(response[4:6])
 
 
 def get_layer_count():
-    response = send_req(CMD_GET_LAYER_COUNT)
+    response = send_req(cmd.GET_LAYER_COUNT)
     return response[1]
 
 
@@ -144,7 +100,7 @@ def get_keyname(keycode):
             return "MO(%d)" % low
         if high == 1:
             return 'C(%s)' % get_keyname(low)
-    return KEYCODE_TO_NAME.get(keycode, '#%x' % keycode)
+    return keys.KEYCODE_TO_NAME.get(keycode, '#%x' % keycode)
 
 
 def get_keycode_direct(name):
@@ -158,7 +114,7 @@ def get_keycode_call(name, func, mask, inner_func):
 
 
 def get_keycode(name):
-    keycode = NAME_TO_KEYCODE.get(name, None)
+    keycode = keys.NAME_TO_KEYCODE.get(name, None)
     if keycode is not None:
         return keycode
 
@@ -188,10 +144,40 @@ def print_keymap():
             print()
 
 
-print("VIA ver: %d" % get_ver())
-print("Up time: ", get_uptime() / 1000.0, "s")
-print("Layout options: ", get_layout_options())
-print("Switch matrix: ", get_switch_matrix())
-print("Layer count: ", get_layer_count())
+def print_info():
+    print("VIA ver: %d" % get_ver())
+    print("Up time: ", get_uptime() / 1000.0, "s")
+    print("Layout options: ", get_layout_options())
+    print("Switch matrix: ", get_switch_matrix())
+    print("Layer count: ", get_layer_count())
 
+
+def set_key_from_description(key_description):
+    (layer, row, col, key_name) = key_description.split(':', 3)
+    layer = int(layer)
+    row = int(row)
+    col = int(col)
+    keycode = get_keycode(key_name)
+    orig = req_keycode(layer, row, col)
+    if orig == keycode:
+        return False
+    logger.info("Setting key on L%d (%d, %d): new %d 0x%x %s old %d 0x%x %s",
+                layer, row, col,
+                keycode, keycode, key_name,
+                orig, orig, get_keyname(orig))
+    set_keycode(layer, row, col, keycode)
+    return True
+
+
+def set_keys_from_args(key_descriptions):
+    changed = False
+    for key_description in key_descriptions:
+        changed |= set_key_from_description(key_description)
+
+    if changed:
+        print_keymap()
+
+
+print_info()
 print_keymap()
+set_keys_from_args(args.key_descriptions)
