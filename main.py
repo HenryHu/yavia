@@ -181,10 +181,10 @@ def print_keymap():
         print("Layer %d" % layer)
         for row in range(3):
             for col in range(3):
-                key = req_keycode(layer, row, col)
-                key_name = get_keyname(key)
+                keycode = req_keycode(layer, row, col)
+                key_name = get_keyname(keycode)
                 print("%10s" % key_name, end=' ')
-                print('%x' % get_keycode(key_name))
+                assert get_keycode(key_name) == keycode
             print()
 
 
