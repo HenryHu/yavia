@@ -1,4 +1,5 @@
-"""xxx"""
+#!/usr/bin/env python3
+"""Main program"""
 import logging
 import argparse
 
