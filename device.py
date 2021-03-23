@@ -81,5 +81,5 @@ def print_info(dev):
     print("VIA ver: %d" % get_ver(dev))
     print("Up time: ", get_uptime(dev) / 1000.0, "s")
     print("Layout options: ", get_layout_options(dev))
-    print("Current wwitch matrix state: ", get_switch_matrix(dev))
+    print("Current switch matrix state: ", get_switch_matrix(dev))
     print("Layer count: ", get_layer_count(dev))
